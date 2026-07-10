@@ -8,6 +8,7 @@ open -a Slack --args --remote-debugging-port=9222
 export PANGRAM_API_KEY=<your-key>
 ```
 or add to .env
+
 3. 
 Run the message tagger
 ```
