@@ -17,8 +17,7 @@ open -a Slack --args --remote-debugging-port=9222
 export PANGRAM_API_KEY=<your-key>
 ```
 
-3. 
-Run the message tagger
+3. Run the message tagger
 ```
 node tagger.mjs
 ```
