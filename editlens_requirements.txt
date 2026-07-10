@@ -1,6 +1,0 @@
-# For editlens_server.py (optional local scorer).
-torch
-transformers
-peft
-safetensors
-huggingface_hub
