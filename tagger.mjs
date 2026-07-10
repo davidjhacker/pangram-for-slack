@@ -1,18 +1,3 @@
-#!/usr/bin/env node
-// slack-ai-tagger — tags >50-word human messages in the *native Slack desktop app*
-// as AI/Human using Pangram. Slack desktop is Electron (Chromium), so we attach via
-// the Chrome DevTools Protocol and inject badges straight into Slack's own DOM.
-// No overlay window, no Slack API, no screen-position mapping, zero npm deps.
-//
-// Setup (once): quit Slack, then relaunch it with the debug port:
-//   osascript -e 'quit app "Slack"'; sleep 2; open -a Slack --args --remote-debugging-port=9222
-// Run:
-//   PANGRAM_API_KEY=<key> node tagger.mjs
-// Without a key it runs dry: gray "?" badges prove the injection works, nothing is cached.
-//
-// Note: the debug port lets any local process script Slack. Localhost-only, but
-// relaunch Slack without the flag when you're not using this.
-
 import fs from 'node:fs'
 import assert from 'node:assert'
 

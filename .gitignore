@@ -1,3 +1,6 @@
 .env
 scores.json
 node_modules/
+.venv/
+__pycache__/
+*.pyc
