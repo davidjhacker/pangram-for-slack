@@ -9,8 +9,7 @@ export PANGRAM_API_KEY=<your-key>
 ```
 or add to .env
 
-3. 
-Run the message tagger
+3. Run the message tagger
 ```
 node tagger.mjs
 ```
