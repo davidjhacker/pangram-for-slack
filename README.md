@@ -1,5 +1,6 @@
-# Pangram Labs (Unofficial) Slack Integration
-Takes advantage of Chromium debugging tools to auto-send Slack messages to Pangram's API and inject results into Slack's DOM.
+# Unofficial Pangram + Slack Integration  <p>
+
+Takes advantage of Chromium debugging tools to auto-send messages to Pangram's API and inject results into Slack's DOM.
 
 <img width="678" height="617" alt="Screenshot 2026-07-10 at 2 08 24 AM" src="https://github.com/user-attachments/assets/1a31e8ea-59d1-4701-9c98-bd3939d09c0f" />.
 
