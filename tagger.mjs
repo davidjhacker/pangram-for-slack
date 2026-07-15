@@ -5,8 +5,15 @@ const PORT = 9222
 const VERSION = 4 // bump when PAYLOAD changes
 try { process.loadEnvFile(new URL('./.env', import.meta.url)) } catch {}
 const KEY = process.env.PANGRAM_API_KEY
+const SCORER = process.env.SCORER || 'pangram' // 'pangram' (cloud API) | 'editlens' (local server, see editlens_server.py)
+const EDITLENS_URL = process.env.EDITLENS_URL || 'http://127.0.0.1:8000/score'
+const ready = SCORER === 'editlens' || !!KEY // editlens needs no key; pangram does
 const CACHE_FILE = new URL('./scores.json', import.meta.url)
-const cache = fs.existsSync(CACHE_FILE) ? JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8')) : {}
+// per-scorer buckets so switching SCORER never serves the other backend's scores.
+// Migrate the old flat format (all-pangram) into { pangram: {...} }.
+const raw = fs.existsSync(CACHE_FILE) ? JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8')) : {}
+const cache = (raw.pangram || raw.editlens) ? raw : { pangram: raw }
+const store = cache[SCORER] ??= {}
 const saveCache = () => fs.writeFileSync(CACHE_FILE, JSON.stringify(cache, null, 1))
 
 // helpers
@@ -74,8 +81,21 @@ const PAYLOAD = `(() => {
   document.body ? start() : addEventListener('DOMContentLoaded', start);
 })()`
 
+// scorer dispatch: same {label, pct} shape from either backend
+const score = text => (SCORER === 'editlens' ? scoreEditlens : scorePangram)(text)
+
+// EditLens: local HTTP server wrapping the open-source model. Server owns model + labels.
+async function scoreEditlens(text) {
+  const r = await fetch(EDITLENS_URL, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }),
+  })
+  if (!r.ok) throw new Error(`editlens ${r.status}: ${await r.text()}`)
+  const { score, label } = await r.json() // score is 0-1 (fraction AI); label is Human|Mixed|AI
+  return { label, pct: score == null ? null : Math.round(score * 100) }
+}
+
 // Pangram v3: create async task, poll to terminal stage
-async function score(text) {
+async function scorePangram(text) {
   const headers = { 'content-type': 'application/json', 'x-api-key': KEY }
   const r = await fetch('https://text.external-api.pangram.com/task', {
     method: 'POST', headers, body: JSON.stringify({ text, public_dashboard_link: false }),
@@ -125,19 +145,19 @@ async function attach(target) {
     if (waiters.has(m.method)) { waiters.get(m.method)(m.params); waiters.delete(m.method) }
     if (m.method === 'Runtime.bindingCalled' && m.params.name === '__pangramSend') {
       const { hash, text } = JSON.parse(m.params.payload)
-      if (!KEY) return apply(hash, { label: '?', pct: null }) // no key — dry run, don't poison the cache
-      if (cache[hash]) {
-        console.log(`cached  ${hash}: ${cache[hash].label} ${cache[hash].pct}% — "${text.slice(0, 60).replace(/\n/g, ' ')}…"`)
-        return apply(hash, cache[hash])
+      if (!ready) return apply(hash, { label: '?', pct: null }) // no key (pangram) — dry run, don't poison the cache
+      if (store[hash]) {
+        console.log(`cached  ${hash}: ${store[hash].label} ${store[hash].pct}% — "${text.slice(0, 60).replace(/\n/g, ' ')}…"`)
+        return apply(hash, store[hash])
       }
       if (inflight.has(hash)) return
       inflight.add(hash)
       console.log(`scoring ${hash} (${wordCount(text)} words): "${text.slice(0, 60).replace(/\n/g, ' ')}…"`)
       try {
-        cache[hash] = await score(text)
+        store[hash] = await score(text)
         saveCache()
-        console.log(`      → ${hash}: ${cache[hash].label} · ${cache[hash].pct}% AI`)
-        apply(hash, cache[hash])
+        console.log(`      → ${hash}: ${store[hash].label} · ${store[hash].pct}% AI`)
+        apply(hash, store[hash])
       } catch (e) {
         console.error(`      ✗ ${hash}: ${e.message}`)
         apply(hash, { label: '?', pct: null }) // visible failure beats silent nothing; retries on Slack reload
@@ -183,5 +203,6 @@ if (!slackPages.length) {
     `then rerun this script.`)
   process.exit(1)
 }
-if (!KEY) console.warn('PANGRAM_API_KEY not set — dry run, everything gets a gray "?" badge.')
+console.log(SCORER === 'editlens' ? `scorer: EditLens (local, ${EDITLENS_URL})` : 'scorer: Pangram (cloud API)')
+if (!ready) console.warn('PANGRAM_API_KEY not set — dry run, everything gets a gray "?" badge. (Or set SCORER=editlens for the local model.)')
 for (const t of slackPages) attach(t).catch(e => console.error(`attach "${t.title}" failed:`, e.message))

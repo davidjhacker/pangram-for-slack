@@ -1,0 +1,3 @@
+# For editlens_server.py (optional local scorer). The tagger itself needs only Node.
+torch
+transformers
