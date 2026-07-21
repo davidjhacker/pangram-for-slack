@@ -1,23 +1,47 @@
-# Unofficial Pangram + Slack Integration  <p>
+# Unofficial Pangram + Slack/Discord Integration
 
-Uses Chromium debugging tools to send all rendered Slack messages to Pangram's API and inject the results into the DOM.
+Uses Chromium debugging tools to send all rendered messages to Pangram's API and inject the results into the DOM.
 
-<img width="621" height="463" alt="Screenshot 2026-07-10 at 2 31 55 AM" src="https://github.com/user-attachments/assets/0ee5e212-5f12-4082-8f34-d2d24b7175ea" />  <br><br>
+## Usage
 
+1. Set environment variables (or use .env)
 
-Works on messages of at least 50 words (Pangram's minimum) and ignores bot users. Caches results so you don't query the same message twice.
+```bash
+export PANGRAM_API_KEY=<your key> # for Pangram API. See editlens instructions below
+export PLATFORM=discord # slack or discord
+```
 
-## Usage:
-1. Launch Slack with the debugger attached:
+1. Launch platform with the debugger attached. Make sure you quit the application first!
+
 ```
 open -a Slack --args --remote-debugging-port=9222
 ```
-2. Export Pangram API Key (or add to .env)
+
 ```
-export PANGRAM_API_KEY=<your-key>
+open -a Discord --args --remote-debugging-port=9222
 ```
 
-3. Run the message tagger
+1. Run the message tagger
+
 ```
 node tagger.mjs
 ```
+
+Done!
+
+## Appendix: EditLens
+
+Pangram's API is expensive for short messages. Luckily, they have released an [open source model](https://huggingface.co/pangram/editlens_roberta-large) that we can run locally.
+
+NOTE: EditLens is only available to approved users. You can petition for approval at the above link.
+
+### Setup
+
+```bash
+hf auth login # authenticate with huggingface to run the model
+pip install -r editlens_requirements.txt
+export SCORER=editlens
+python editlens_server.py    
+```
+
+Then, in a separate terminal, run `node tagger.mjs` as normal.

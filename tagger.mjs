@@ -5,8 +5,8 @@ const PORT = 9222
 const VERSION = 6 // bump when PAYLOAD changes
 try { process.loadEnvFile(new URL('./.env', import.meta.url)) } catch {}
 const KEY = process.env.PANGRAM_API_KEY
-const SCORER = process.env.SCORER || 'pangram' // 'pangram' (cloud API) | 'editlens' (local server, see editlens_server.py)
-const PLATFORM = (process.env.PLATFORM || 'slack').toLowerCase()
+const SCORER = process.env.SCORER || 'pangram' // 'pangram' (cloud API) or 'editlens' (local server, see editlens_server.py)
+const PLATFORM = (process.env.PLATFORM || 'slack').toLowerCase() // 'slack' or 'discord'
 const PLATFORMS = {
   slack: {
     name: 'Slack',
@@ -28,10 +28,7 @@ if (!P) { console.error(`Unknown PLATFORM="${PLATFORM}". Use "slack" or "discord
 const EDITLENS_URL = process.env.EDITLENS_URL || 'http://127.0.0.1:8000/score'
 const ready = SCORER === 'editlens' || !!KEY // editlens needs no key; pangram does
 const CACHE_FILE = new URL('./scores.json', import.meta.url)
-// per-scorer buckets so switching SCORER never serves the other backend's scores.
-// Migrate the old flat format (all-pangram) into { pangram: {...} }.
-const raw = fs.existsSync(CACHE_FILE) ? JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8')) : {}
-const cache = (raw.pangram || raw.editlens) ? raw : { pangram: raw }
+const cache = fs.existsSync(CACHE_FILE) ? JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8')) : {}
 const store = cache[SCORER] ??= {}
 const saveCache = () => fs.writeFileSync(CACHE_FILE, JSON.stringify(cache, null, 1))
 
