@@ -2,6 +2,8 @@
 
 Uses Chromium debugging tools to send all rendered messages to Pangram's API and inject the results into the DOM.
 
+<img width="621" height="463" alt="pangram_img" src="https://github.com/user-attachments/assets/cc66e305-17d0-49b1-931f-2e3ed77205ab" />
+
 ## Usage
 
 1. Set environment variables (or use .env)
@@ -11,14 +13,10 @@ export PANGRAM_API_KEY=<your key> # for Pangram API. See editlens instructions b
 export PLATFORM=discord # slack or discord
 ```
 
-1. Launch platform with the debugger attached. Make sure you quit the application first!
+1. Launch the platform of your choice with the debugger attached. Make sure you quit the application first!
 
-```
-open -a Slack --args --remote-debugging-port=9222
-```
-
-```
-open -a Discord --args --remote-debugging-port=9222
+```bash
+open -a Discord --args --remote-debugging-port=9222 # or Slack
 ```
 
 1. Run the message tagger
