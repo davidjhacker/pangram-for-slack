@@ -2,10 +2,29 @@ import fs from 'node:fs'
 import assert from 'node:assert'
 
 const PORT = 9222
-const VERSION = 4 // bump when PAYLOAD changes
+const VERSION = 6 // bump when PAYLOAD changes
 try { process.loadEnvFile(new URL('./.env', import.meta.url)) } catch {}
 const KEY = process.env.PANGRAM_API_KEY
 const SCORER = process.env.SCORER || 'pangram' // 'pangram' (cloud API) | 'editlens' (local server, see editlens_server.py)
+const PLATFORM = (process.env.PLATFORM || 'slack').toLowerCase()
+const PLATFORMS = {
+  slack: {
+    name: 'Slack',
+    urlMatch: 'app.slack.com',
+    msgSelector: '[data-qa="message-text"]',
+    rowSelector: '[data-qa="virtual-list-item"]',
+    botSelector: '.c-app_badge, [data-qa="bot_label"]',
+  },
+  discord: {
+    name: 'Discord',
+    urlMatch: 'discord.com',
+    msgSelector: '[id^="message-content-"]',
+    rowSelector: '[id^="chat-messages-"]',
+    botSelector: '[class*="botTag"]',
+  },
+}
+const P = PLATFORMS[PLATFORM]
+if (!P) { console.error(`Unknown PLATFORM="${PLATFORM}". Use "slack" or "discord".`); process.exit(1) }
 const EDITLENS_URL = process.env.EDITLENS_URL || 'http://127.0.0.1:8000/score'
 const ready = SCORER === 'editlens' || !!KEY // editlens needs no key; pangram does
 const CACHE_FILE = new URL('./scores.json', import.meta.url)
@@ -30,18 +49,20 @@ if (process.argv.includes('--selftest')) {
   process.exit(0)
 }
 
-// ---- in-page script: watch Slack's virtualized message list, badge as messages mount ----
 const PAYLOAD = `(() => {
   if (window.__pangramV === ${VERSION}) return; window.__pangramV = ${VERSION};
   const djb2 = ${djb2};
   const wordCount = ${wordCount};
-  const seen = new Map(); // hash -> result | 'pending' (page-lifetime; durable cache lives in Node)
-  const STYLE = 'display:inline-block;margin-left:8px;padding:0 6px;border-radius:9px;font-size:11px;font-weight:700;vertical-align:middle;';
+  const MSG_SEL = '${P.msgSelector}';
+  const ROW_SEL = '${P.rowSelector}';
+  const BOT_SEL = '${P.botSelector}';
+  const seen = new Map();
+  const STYLE = 'display:block;width:fit-content;margin-top:4px;padding:0 6px;border-radius:9px;font-size:11px;font-weight:700;';
   const COLORS = { AI: 'background:#fdd8d8;color:#a00000', Human: 'background:#d8f0d8;color:#006600', Mixed: 'background:#fdeecb;color:#946200' };
   const GRAY = 'background:#e8e8e8;color:#555';
   function badge(el, res) {
-    const old = el.querySelector('.pangram-badge'); // badge presence also stops badge text feeding back into the hash
-    if (old) { if (old.dataset.pending && !res.pending) old.remove(); else return; } // upgrade checking -> verdict, never stack
+    const old = el.querySelector('.pangram-badge');
+    if (old) { if (old.dataset.pending && !res.pending) old.remove(); else return; }
     const b = document.createElement('span');
     b.className = 'pangram-badge';
     if (res.pending) b.dataset.pending = '1';
@@ -55,10 +76,10 @@ const PAYLOAD = `(() => {
     document.querySelectorAll('[data-pangram-hash="' + hash + '"]').forEach(el => badge(el, res));
   };
   function scan() {
-    document.querySelectorAll('[data-qa="message-text"]').forEach(el => {
+    document.querySelectorAll(MSG_SEL).forEach(el => {
       if (el.querySelector('.pangram-badge')) return;
-      const row = el.closest('[data-qa="virtual-list-item"]');
-      if (row && row.querySelector('.c-app_badge, [data-qa="bot_label"]')) return; // bots: already known robots
+      const row = el.closest(ROW_SEL);
+      if (row && row.querySelector(BOT_SEL)) return;
       const t = el.innerText || '';
       if (wordCount(t) <= 50) return;
       const h = djb2(t);
@@ -160,7 +181,7 @@ async function attach(target) {
         apply(hash, store[hash])
       } catch (e) {
         console.error(`      ✗ ${hash}: ${e.message}`)
-        apply(hash, { label: '?', pct: null }) // visible failure beats silent nothing; retries on Slack reload
+        apply(hash, { label: '?', pct: null })
       } finally {
         inflight.delete(hash)
       }
@@ -176,33 +197,33 @@ async function attach(target) {
   const stale = await evalJson(
     `!!((window.__pangramInstalled && !window.__pangramV) || (window.__pangramV && window.__pangramV !== ${VERSION}))`)
   if (stale) {
-    console.log('stale tagger found in page — reloading the Slack window once to refresh it')
+    console.log(`stale tagger found in page — reloading the ${P.name} window once to refresh it`)
     await send('Page.reload')
     await new Promise(res => waiters.set('Page.loadEventFired', res))
-    await new Promise(res => setTimeout(res, 5000)) // let the Slack SPA render
+    await new Promise(res => setTimeout(res, 5000))
   } else {
     await send('Runtime.evaluate', { expression: PAYLOAD })
   }
   const info = await evalJson(`(() => {
-    const els = [...document.querySelectorAll('[data-qa="message-text"]')];
+    const els = [...document.querySelectorAll('${P.msgSelector}')];
     return { msgs: els.length, over50: els.filter(e => (e.innerText || '').trim().split(/\\s+/).length > 50).length };
   })()`)
   console.log(`attached: "${target.title}" — ${info.msgs} messages in view, ${info.over50} over 50 words. Watching…`)
-  // ponytail: exit on disconnect; rerun the script after restarting Slack. Auto-reconnect if that gets old.
-  ws.addEventListener('close', () => { console.log('Slack window closed — rerun me when Slack is back.'); process.exit(0) })
+  ws.addEventListener('close', () => { console.log(`${P.name} window closed — rerun me when ${P.name} is back.`); process.exit(0) })
 }
 
 
 
 const targets = await fetch(`http://127.0.0.1:${PORT}/json`).then(r => r.json()).catch(() => null)
-const slackPages = targets?.filter(t => t.type === 'page' && t.url.includes('app.slack.com')) ?? []
-if (!slackPages.length) {
+const pages = targets?.filter(t => t.type === 'page' && t.url.includes(P.urlMatch)) ?? []
+if (!pages.length) {
   console.error(
-    `No Slack debug target on port ${PORT}. Quit Slack and relaunch it with:\n` +
-    `  osascript -e 'quit app "Slack"'; sleep 2; open -a Slack --args --remote-debugging-port=${PORT}\n` +
+    `No ${P.name} debug target on port ${PORT}. Quit ${P.name} and relaunch it with:\n` +
+    `  osascript -e 'quit app "${P.name}"'; sleep 2; open -a ${P.name} --args --remote-debugging-port=${PORT}\n` +
     `then rerun this script.`)
   process.exit(1)
 }
+console.log(`platform: ${P.name}`)
 console.log(SCORER === 'editlens' ? `scorer: EditLens (local, ${EDITLENS_URL})` : 'scorer: Pangram (cloud API)')
 if (!ready) console.warn('PANGRAM_API_KEY not set — dry run, everything gets a gray "?" badge. (Or set SCORER=editlens for the local model.)')
-for (const t of slackPages) attach(t).catch(e => console.error(`attach "${t.title}" failed:`, e.message))
+for (const t of pages) attach(t).catch(e => console.error(`attach "${t.title}" failed:`, e.message))
